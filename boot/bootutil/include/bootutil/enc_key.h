@@ -44,6 +44,7 @@ extern "C" {
 struct enc_key_data {
     uint8_t valid;
     bootutil_aes_ctr_context aes_ctr;
+    void * qp_handle;
 };
 
 /**

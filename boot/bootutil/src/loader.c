@@ -895,7 +895,8 @@ boot_is_header_valid(const struct image_header *hdr, const struct flash_area *fa
     }
 #else
     if ((hdr->ih_flags & IMAGE_F_ENCRYPTED_AES128) &&
-        (hdr->ih_flags & IMAGE_F_ENCRYPTED_AES256))
+        (hdr->ih_flags & IMAGE_F_ENCRYPTED_AES256) &&
+        (hdr->ih_flags & IMAGE_F_ENCRYPTED_QEEP))
     {
         return false;
     }
@@ -1089,6 +1090,8 @@ boot_validate_slot(struct boot_loader_state *state, int slot,
         }
     }
 #endif
+    BOOT_LOG_INF("Validating %s image...",
+                     (slot == BOOT_PRIMARY_SLOT) ? "primary" : "secondary");
     if (!boot_is_header_valid(hdr, fap, state)) {
         fih_rc = FIH_FAILURE;
     } else {
@@ -1460,7 +1463,6 @@ boot_copy_region(struct boot_loader_state *state,
         only_copy = true;
     }
 #endif
-
     bytes_copied = 0;
     while (bytes_copied < sz) {
         if (sz - bytes_copied > sizeof buf) {
@@ -1531,8 +1533,10 @@ boot_copy_region(struct boot_loader_state *state,
 
         bytes_copied += chunk_sz;
 
+        if ((bytes_copied/chunk_sz % 20) == 0) printf(".");
         MCUBOOT_WATCHDOG_FEED();
     }
+    printf("\n");
 
     return 0;
 }
@@ -1788,13 +1792,14 @@ boot_swap_image(struct boot_loader_state *state, struct boot_status *bs)
             rc = boot_enc_load(state, 1, hdr, fap, bs);
 #endif
             assert(rc >= 0);
-
+            #if !defined(MCUBOOT_ENCRYPT_MASQ) // For masq, already got the qeep key in bs->enckey[1]
             if (rc == 0) {
                 rc = boot_enc_set_key(BOOT_CURR_ENC(state), 1, bs);
                 assert(rc == 0);
             } else {
                 rc = 0;
             }
+            #endif
         } else {
             memset(bs->enckey[1], 0xff, BOOT_ENC_KEY_ALIGN_SIZE);
         }

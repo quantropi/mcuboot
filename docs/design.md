@@ -101,6 +101,8 @@ struct image_tlv {
 #define IMAGE_F_NON_BOOTABLE             0x00000010 /* Split image app. */
 #define IMAGE_F_RAM_LOAD                 0x00000020
 
+#define IMAGE_F_ENCRYPTED_QEEP           0x00000080 /* Encrypted using QEEP */
+
 /*
  * Image trailer TLV types.
  */
@@ -120,6 +122,11 @@ struct image_tlv {
 #define IMAGE_TLV_ENC_X25519        0x33   /* Key encrypted with ECIES-X25519 */
 #define IMAGE_TLV_DEPENDENCY        0x40   /* Image depends on other image */
 #define IMAGE_TLV_SEC_CNT           0x50   /* security counter */
+
+#define IMAGE_TLV_MASQ_SIG              0xf0   /* masq signature */
+#define IMAGE_TLV_MASQ_CLIENT_CERT      0xf1   /* masq client certificate */
+#define IMAGE_TLV_ENC_MASQ              0xf2   /* encaped QEEP key with KEM */
+
 ```
 
 Optional type-length-value records (TLVs) containing image metadata are placed

@@ -26,6 +26,28 @@
 #include "bootutil/crypto/ecdh_p256.h"
 #endif
 
+#if defined(MCUBOOT_ENCRYPT_MASQ)
+#include <stdio.h>
+#define MASQ_KEM_hppk
+#include "masq_kem.h"
+#include "qispace_qeep.h"
+#define SHARED_KEY_LEN 32
+#define IV_SIZE     16
+// 1+1+32+4  tag,version,key,mac
+#define QK_LEN      38
+QEEP_RET QSC_qeep_key_create(void * QSC, uint8_t *qe, int32_t qe_len, int32_t qkFlag,   /*0: no encrypt; 1: encrypt*/
+       int32_t req_qk_len, uint8_t *qk_out, int32_t *qk_out_len);
+
+    // the KEM decap will not call rand
+static int32_t rand_cf(struct MASQ_RAND_HANDLE_ *rand_handle, int32_t rand_length,  uint8_t *rand_num) {
+    return 0;
+}
+static int32_t rand_seed_cf(struct MASQ_RAND_HANDLE_ *rand_handle, uint8_t *seed, int32_t seed_length) {
+    return 0;
+}
+uint8_t iv_qeep[IV_SIZE];
+#endif
+
 #if !defined(MCUBOOT_USE_PSA_CRYPTO)
 #if defined(MCUBOOT_ENCRYPT_X25519)
 #include "bootutil/crypto/ecdh_x25519.h"
@@ -59,6 +81,8 @@
 #    define EC_CIPHERKEY_INDEX  (65 + 32)
 _Static_assert(EC_CIPHERKEY_INDEX + BOOT_ENC_KEY_SIZE == EXPECTED_ENC_LEN,
         "Please fix ECIES-P256 component indexes");
+#elif defined(MCUBOOT_ENCRYPT_MASQ)
+#    define EXPECTED_ENC_TLV    IMAGE_TLV_ENC_MASQ
 #elif defined(MCUBOOT_ENCRYPT_X25519)
 #    define EXPECTED_ENC_TLV    IMAGE_TLV_ENC_X25519
 #    define EC_PUBK_INDEX       (0)
@@ -429,6 +453,11 @@ boot_decrypt_key(const uint8_t *buf, uint8_t *enckey)
     uint8_t counter[BOOT_ENC_BLOCK_SIZE];
     uint16_t len;
 #endif
+#if defined(MCUBOOT_ENCRYPT_MASQ)
+    MASQ_KEM_handle *kem_handle;
+	uint8_t key[SHARED_KEY_LEN];
+	int32_t qklen;
+#endif
     struct bootutil_key *bootutil_enc_key = NULL;
     int rc = -1;
 
@@ -440,6 +469,25 @@ boot_decrypt_key(const uint8_t *buf, uint8_t *enckey)
     if (bootutil_enc_key == NULL) {
         return rc;
     }
+
+#if defined(MCUBOOT_ENCRYPT_MASQ)
+    kem_handle = MASQ_KEM_init(1, rand_cf, rand_seed_cf, NULL);
+    if(kem_handle == NULL) {
+        return -1;  
+    }
+    if(MASQ_KEM_decaps(kem_handle, (uint8_t *)(bootutil_enc_key->key), (uint8_t *)buf, key) != MASQ_KEM_SUCCESS) {
+        return -1;  
+    }
+    MASQ_KEM_free(kem_handle);
+
+    QSC_qeep_key_create(kem_handle, key, SHARED_KEY_LEN, 0, SHARED_KEY_LEN, enckey, &qklen);  //kem_handle is not used in this api
+    if (qklen != QK_LEN) {
+        return -1;
+    }
+
+    memcpy(iv_qeep, &buf[TLV_ENC_MASQ_SZ-16], 16);
+
+#endif
 
 #if defined(MCUBOOT_ENCRYPT_RSA)
 
@@ -689,12 +737,30 @@ boot_enc_set_key(struct enc_key_data *enc_state, uint8_t slot,
 {
     int rc;
 
+#if !defined(MCUBOOT_ENCRYPT_MASQ)
     rc = bootutil_aes_ctr_set_key(&enc_state[slot].aes_ctr, bs->enckey[slot]);
     if (rc != 0) {
         boot_enc_drop(enc_state, slot);
         return -1;
     }
+#else
+    rc = QP_init((QP_Handle *)&(enc_state[slot].qp_handle));
+       if (rc != QEEP_OK) {
+               return -1;
+       }
 
+       rc = QP_qeep_key_load((QP_Handle)(enc_state[slot].qp_handle), (uint8_t *)(bs->enckey[slot]), QK_LEN);
+       if (rc != QEEP_OK) {
+        QP_close((QP_Handle)(enc_state[slot].qp_handle));
+               return -1;
+       }
+
+       rc = QP_iv_set((QP_Handle)(enc_state[slot].qp_handle), iv_qeep, IV_SIZE);
+       if (rc != QEEP_OK) {
+        QP_close((QP_Handle)(enc_state[slot].qp_handle));
+               return -1;
+       }
+#endif
     enc_state[slot].valid = 1;
 
     return 0;
@@ -706,18 +772,25 @@ boot_enc_valid(struct enc_key_data *enc_state, int slot)
     return enc_state[slot].valid;
 }
 
+// got this in loader.c
+#if BOOT_MAX_ALIGN > 1024
+#define BUF_SZ BOOT_MAX_ALIGN
+#else
+#define BUF_SZ 1024
+#endif
+
 void
 boot_enc_encrypt(struct enc_key_data *enc_state, int slot, uint32_t off,
              uint32_t sz, uint32_t blk_off, uint8_t *buf)
 {
     struct enc_key_data *enc = &enc_state[slot];
-    uint8_t nonce[16];
 
     /* Nothing to do with size == 0 */
     if (sz == 0) {
        return;
     }
-
+#if !defined(MCUBOOT_ENCRYPT_MASQ)
+    uint8_t nonce[16];
     memset(nonce, 0, 12);
     off >>= 4;
     nonce[12] = (uint8_t)(off >> 24);
@@ -727,6 +800,12 @@ boot_enc_encrypt(struct enc_key_data *enc_state, int slot, uint32_t off,
 
     assert(enc->valid == 1);
     bootutil_aes_ctr_encrypt(&enc->aes_ctr, nonce, buf, sz, blk_off, buf);
+#else
+    uint8_t tmp[BUF_SZ];
+    memcpy(tmp, buf, sz);
+    assert(enc->valid == 1);
+    QP_encrypt((QP_Handle)(enc->qp_handle), tmp, sz, buf);
+#endif
 }
 
 void
@@ -734,13 +813,14 @@ boot_enc_decrypt(struct enc_key_data *enc_state, int slot, uint32_t off,
              uint32_t sz, uint32_t blk_off, uint8_t *buf)
 {
     struct enc_key_data *enc = &enc_state[slot];
-    uint8_t nonce[16];
 
     /* Nothing to do with size == 0 */
     if (sz == 0) {
        return;
     }
 
+#if !defined(MCUBOOT_ENCRYPT_MASQ)
+    uint8_t nonce[16];
     memset(nonce, 0, 12);
     off >>= 4;
     nonce[12] = (uint8_t)(off >> 24);
@@ -750,6 +830,12 @@ boot_enc_decrypt(struct enc_key_data *enc_state, int slot, uint32_t off,
 
     assert(enc->valid == 1);
     bootutil_aes_ctr_decrypt(&enc->aes_ctr, nonce, buf, sz, blk_off, buf);
+#else
+    uint8_t tmp[BUF_SZ];
+    memcpy(tmp, buf, sz);
+    assert(enc->valid == 1);
+    QP_decrypt((QP_Handle)(enc->qp_handle), tmp, sz, buf);
+#endif
 }
 
 /**

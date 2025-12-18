@@ -28,11 +28,17 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
 #include <errno.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/types.h>
 
 #include <flash_map_backend/flash_map_backend.h>
+#include "bootutil/bootutil.h"
+#include "bootutil/bootutil_log.h"
 
 #include "bootutil/image.h"
 #include "bootutil/crypto/sha.h"
@@ -41,6 +47,11 @@
 #include "bootutil/fault_injection_hardening.h"
 
 #include "mcuboot_config/mcuboot_config.h"
+#include "mbedtls/sha512.h"
+#include "mbedtls/x509_crt.h"
+#include "mbedtls/debug.h"
+
+BOOT_LOG_MODULE_DECLARE(mcuboot);
 
 #ifdef MCUBOOT_ENC_IMAGES
 #include "bootutil/enc_key.h"
@@ -52,11 +63,17 @@
 #include "mbedtls/ecdsa.h"
 #endif
 #if defined(MCUBOOT_ENC_IMAGES) || defined(MCUBOOT_SIGN_RSA) || \
-    defined(MCUBOOT_SIGN_EC256)
+    defined(MCUBOOT_SIGN_EC256) || defined(MCUBOOT_SIGN_MASQ)
 #include "mbedtls/asn1.h"
 #endif
 
 #include "bootutil_priv.h"
+
+#include "mbedtls/pk.h"
+
+#if defined(MCUBOOT_SIGN_MASQ)
+#    define MCUBOOT_SIGN_PURE
+#endif
 
 #ifndef MCUBOOT_SIGN_PURE
 /*
@@ -220,6 +237,7 @@ bootutil_img_hash(struct boot_loader_state *state,
  * configured for any signature, don't define this macro.
  */
 #if (defined(MCUBOOT_SIGN_RSA)      + \
+     defined(MCUBOOT_SIGN_MASQ)    + \
      defined(MCUBOOT_SIGN_EC256)    + \
      defined(MCUBOOT_SIGN_EC384)    + \
      defined(MCUBOOT_SIGN_ED25519)) > 1
@@ -246,6 +264,11 @@ bootutil_img_hash(struct boot_loader_state *state,
 #    define EXPECTED_SIG_TLV IMAGE_TLV_ED25519
 #    define SIG_BUF_SIZE 64
 #    define EXPECTED_SIG_LEN(x) ((x) == SIG_BUF_SIZE)
+#elif defined(MCUBOOT_SIGN_MASQ)
+#    define EXPECTED_SIG_TLV IMAGE_TLV_MASQ_SIG
+#    define EXPECTED_CRT_TLV IMAGE_TLV_MASQ_CLIENT_CERT
+#    define SIG_BUF_SIZE 4627 * 2 + 4       // the largest signature length mldsa87
+#    define EXPECTED_SIG_LEN(x) ((x) <= SIG_BUF_SIZE) /* 2048 bits */
 #else
 #    define SIG_BUF_SIZE 32 /* no signing, sha256 digest only */
 #endif
@@ -256,6 +279,8 @@ bootutil_img_hash(struct boot_loader_state *state,
 #endif
 
 #ifdef EXPECTED_SIG_TLV
+
+#if !defined(MCUBOOT_SIGN_MASQ)
 
 #if !defined(MCUBOOT_BUILTIN_KEY)
 #if !defined(MCUBOOT_HW_KEY)
@@ -337,6 +362,7 @@ bootutil_find_key(uint8_t image_index, uint8_t *key, uint16_t key_len)
 #endif /* !MCUBOOT_BUILTIN_KEY */
 #endif /* EXPECTED_SIG_TLV */
 
+#endif /* MCUBOOT_SIGN_MASQ */
 /**
  * Reads the value of an image's security counter.
  *
@@ -403,6 +429,7 @@ bootutil_get_img_security_cnt(struct boot_loader_state *state, int slot,
     return 0;
 }
 
+#if !defined(MCUBOOT_SIGN_MASQ)
 #if defined(MCUBOOT_SIGN_PURE)
 /* Returns:
  *  0 -- found
@@ -440,7 +467,9 @@ static int bootutil_check_for_pure(const struct image_header *hdr,
     return 1;
 }
 #endif
+#endif
 
+#if !defined(MCUBOOT_SIGN_MASQ)
 #ifndef ALLOW_ROGUE_TLVS
 /*
  * The following list of TLVs are the only entries allowed in the unprotected
@@ -468,7 +497,49 @@ static const uint16_t allowed_unprot_tlvs[] = {
      IMAGE_TLV_ANY,
 };
 #endif
+#endif
 
+#define BUFSIZE 2048
+#define SHA512_DIGEST_LENGTH 64
+void sha512(struct image_header *hdr, const struct flash_area *fap, uint32_t off, uint32_t len, uint8_t *outbuf) {
+    mbedtls_sha512_context ctx;
+    int ret;
+    uint32_t lastlen = len;
+    uint32_t crntoff = off;
+    uint32_t crntsize = 0;
+    uint8_t buf[BUFSIZE];
+
+    mbedtls_sha512_init(&ctx);
+    ret = mbedtls_sha512_starts_ret(&ctx, 0);
+    assert(ret == 0);
+
+    while (lastlen > 0) {
+        if (lastlen > BUFSIZE) crntsize = BUFSIZE;
+        else crntsize = lastlen;
+
+        ret = LOAD_IMAGE_DATA(hdr, fap, crntoff, buf, crntsize);
+
+        ret = mbedtls_sha512_update_ret(&ctx, buf, crntsize);
+        assert(ret == 0);
+
+        lastlen -= crntsize;
+        crntoff += crntsize;
+    }
+
+    ret = mbedtls_sha512_finish_ret(&ctx, outbuf);
+    assert(ret == 0);
+/*
+uint32_t *tmp = (uint32_t *)outbuf;
+    for (int i=0; i<16; i++) {
+        BOOT_LOG_INF("%08x ", *(tmp+i));
+    }
+*/
+}
+int rand(void) {
+    return 1;
+}
+extern const unsigned char quantropi_crt_der[];
+extern unsigned int quantropi_crt_der_len;
 /*
  * Verify the integrity of the image.
  * Return non-zero if image could not be validated/does not validate.
@@ -506,18 +577,26 @@ bootutil_img_validate(struct boot_loader_state *state,
 #endif /* EXPECTED_SIG_TLV */
     struct image_tlv_iter it;
     uint8_t buf[SIG_BUF_SIZE];
+    uint8_t *c_crtbuf;
 #if defined(EXPECTED_HASH_TLV) && !defined(MCUBOOT_SIGN_PURE)
     int image_hash_valid = 0;
     uint8_t hash[IMAGE_HASH_SIZE];
 #endif
     int rc = 0;
     FIH_DECLARE(fih_rc, FIH_FAILURE);
+
+#if defined(MCUBOOT_SIGN_MASQ)
+    mbedtls_x509_crt client_cert;
+    mbedtls_x509_crt root_cert;
+#endif
+
 #ifdef MCUBOOT_HW_ROLLBACK_PROT
     fih_int security_cnt = fih_int_encode(INT_MAX);
     uint32_t img_security_cnt = 0;
     FIH_DECLARE(security_counter_valid, FIH_FAILURE);
 #endif
 
+#if !defined(MCUBOOT_SIGN_MASQ)
 #if defined(EXPECTED_HASH_TLV) && !defined(MCUBOOT_SIGN_PURE)
 #if defined(MCUBOOT_SWAP_USING_OFFSET) && defined(MCUBOOT_SERIAL_RECOVERY)
     rc = bootutil_img_hash(state, hdr, fap, tmp_buf, tmp_buf_sz, hash, seed, seed_len,
@@ -540,6 +619,7 @@ bootutil_img_validate(struct boot_loader_state *state,
     if (rc != 0) {
 	goto out;
     }
+#endif
 #endif
 
 #if defined(MCUBOOT_SWAP_USING_OFFSET)
@@ -565,7 +645,6 @@ bootutil_img_validate(struct boot_loader_state *state,
         rc = -1;
         goto out;
     }
-
     /*
      * Traverse through all of the TLVs, performing any checks we know
      * and are able to do.
@@ -578,6 +657,7 @@ bootutil_img_validate(struct boot_loader_state *state,
             break;
         }
 
+#if !defined(MCUBOOT_SIGN_MASQ)
 #ifndef ALLOW_ROGUE_TLVS
         /*
          * Ensure that the non-protected TLV only has entries necessary to hold
@@ -598,6 +678,8 @@ bootutil_img_validate(struct boot_loader_state *state,
              }
         }
 #endif
+#endif
+
         switch(type) {
 #if defined(EXPECTED_HASH_TLV) && !defined(MCUBOOT_SIGN_PURE)
         case EXPECTED_HASH_TLV:
@@ -655,11 +737,16 @@ bootutil_img_validate(struct boot_loader_state *state,
 #ifdef EXPECTED_SIG_TLV
         case EXPECTED_SIG_TLV:
         {
+#if defined(MCUBOOT_SIGN_MASQ)
+            key_id = 0;
+#else
             /* Ignore this signature if it is out of bounds. */
             if (key_id < 0 || key_id >= bootutil_key_cnt) {
                 key_id = -1;
                 continue;
             }
+#endif
+
             if (!EXPECTED_SIG_LEN(len) || len > sizeof(buf)) {
                 rc = -1;
                 goto out;
@@ -668,6 +755,7 @@ bootutil_img_validate(struct boot_loader_state *state,
             if (rc) {
                 goto out;
             }
+
 #ifndef MCUBOOT_SIGN_PURE
             FIH_CALL(bootutil_verify_sig, valid_signature, hash, sizeof(hash),
                                                            buf, len, key_id);
@@ -675,12 +763,93 @@ bootutil_img_validate(struct boot_loader_state *state,
             /* Directly check signature on the image, by using the mapping of
              * a device to memory. The pointer is beginning of image in flash,
              * so offset of area, the range is header + image + protected tlvs.
-             */
+             */            
+#if !defined(MCUBOOT_SIGN_MASQ)
             FIH_CALL(bootutil_verify_img, valid_signature, (void *)flash_area_get_off(fap),
                      hdr->ih_hdr_size + hdr->ih_img_size + hdr->ih_protect_tlv_size,
                      buf, len, key_id);
-#endif
             key_id = -1;
+#else
+            uint8_t hash[SHA512_DIGEST_LENGTH];
+            uint32_t siglen = *(uint32_t *)(&buf[0]);
+            uint8_t *sigbuf = &buf[sizeof(uint32_t)];
+            sha512(hdr, fap, hdr->ih_hdr_size, hdr->ih_img_size + hdr->ih_protect_tlv_size, hash);
+
+            char * keytype[] = {"none", "RSA", "ECKEY", "ECKEY_DH", "ECDSA", "RSA_ALT", "RSASSA_PSS", "opaque", "ghppkds1", "ghppkds3", "ghppkds5", "mldsa44", "mldsa65", "mldsa87"};
+            int sksize[] = {104, 152, 200, 2560, 4032, 4896};
+            int pksize[] = {424, 576, 728, 1312, 1952, 2592};
+            int sigsize[] = {144, 208, 272, 2420, 3309, 4627};
+            int rsakeysize;
+
+            int itype = mbedtls_pk_get_type(&client_cert.pk);
+            if (itype < 8) {
+                rsakeysize = mbedtls_pk_get_bitlen(&client_cert.pk)/8;
+                BOOT_LOG_INF("Validating RSA/ECC(algorithm: %s, public key: %d Bytes, private key: %d Bytes, signature: %d Bytes) signed image ...", 
+                        keytype[itype], rsakeysize, rsakeysize, rsakeysize);
+            }
+            else {
+                BOOT_LOG_INF("Validating MASQ(algorithm: %s, public key: %d Bytes, private key: %d Bytes, signature: %d byte) signed image ...", 
+                        keytype[itype], pksize[itype-8], sksize[itype-8], sigsize[itype-8]);
+            }
+
+            int64_t start_time = k_uptime_get();
+            int64_t elapsed_time;
+            if (mbedtls_pk_verify(&client_cert.pk, MBEDTLS_MD_NONE, hash, SHA512_DIGEST_LENGTH, sigbuf, siglen) == 0) {
+                elapsed_time = k_uptime_delta(&start_time);
+                FIH_SET(valid_signature, FIH_SUCCESS);
+                BOOT_LOG_INF("Image VERIFIED ! Elapsed time %d ms.", (int)elapsed_time);
+            } else {
+                if ( (len == siglen * 2 + sizeof(uint32_t)) &&
+                    (mbedtls_pk_verify(&client_cert.pk, MBEDTLS_MD_NONE, hash, SHA512_DIGEST_LENGTH, sigbuf+siglen, siglen) == 0) ) {
+                        elapsed_time = k_uptime_delta(&start_time);
+                        FIH_SET(valid_signature, FIH_SUCCESS);
+                        BOOT_LOG_INF("Image VERIFIED ! Elapsed time %d ms.", (int)elapsed_time);
+                } else {
+                    BOOT_LOG_INF("INVALID Image!");
+                    FIH_SET(valid_signature, FIH_FAILURE);
+                }
+            }
+            mbedtls_x509_crt_free(&client_cert);
+#endif
+#endif
+
+            break;
+        }
+#endif /* EXPECTED_SIG_TLV */
+#ifdef MCUBOOT_SIGN_MASQ
+        case EXPECTED_CRT_TLV:
+        {
+            uint32_t flags = -1;
+
+            c_crtbuf = malloc(len+1);
+            if (c_crtbuf == NULL) {
+                goto out;
+            }
+
+            rc = LOAD_IMAGE_DATA(hdr, fap, off, c_crtbuf, len);
+            if (rc) {
+                goto out;
+            }
+            c_crtbuf[len-1] = 0;
+
+            mbedtls_x509_crt_init(&client_cert);
+            mbedtls_x509_crt_init(&root_cert);
+            int rc1=0, rc2=0;
+            // Load root certificate to verify client certificate 
+            if ((rc1=mbedtls_x509_crt_parse(&client_cert, c_crtbuf, len)) != 0 || (rc2=mbedtls_x509_crt_parse_der(&root_cert, quantropi_crt_der, quantropi_crt_der_len)) != 0) {
+                BOOT_LOG_INF(" Invalid certificate (rc1:%d, rc2:%d).\n", rc1,rc2);
+                mbedtls_x509_crt_free(&client_cert);
+                mbedtls_x509_crt_free(&root_cert);
+                goto out;
+            } else {
+                if ((mbedtls_x509_crt_verify(&client_cert, &root_cert, NULL, NULL, &flags, NULL, NULL)) != 0) {
+                    BOOT_LOG_INF(" failed! mbedtls_x509_crt verify\n");
+                    mbedtls_x509_crt_free(&client_cert);
+                    mbedtls_x509_crt_free(&root_cert);
+                    goto out;
+                }
+                mbedtls_x509_crt_free(&root_cert);
+            }
             break;
         }
 #endif /* EXPECTED_SIG_TLV */

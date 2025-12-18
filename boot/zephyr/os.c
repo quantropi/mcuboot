@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "os/os_heap.h"
+#ifdef MBEDTLS_MEMORY_BUFFER_ALLOC_C   
 
 #ifdef CONFIG_BOOT_USE_MBEDTLS
 
@@ -60,4 +61,5 @@ void os_heap_init(void)
 void os_heap_init(void)
 {
 }
+#endif
 #endif

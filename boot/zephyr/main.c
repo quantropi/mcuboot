@@ -446,7 +446,7 @@ int main(void)
     MCUBOOT_WATCHDOG_FEED();
 
 #if !defined(MCUBOOT_DIRECT_XIP)
-    BOOT_LOG_INF("Starting bootloader");
+    BOOT_LOG_INF("Starting secure bootloader");
 #else
     BOOT_LOG_INF("Starting Direct-XIP bootloader");
 #endif
@@ -455,8 +455,9 @@ int main(void)
     /* LED init */
     io_led_init();
 #endif
-
+#ifdef MBEDTLS_MEMORY_BUFFER_ALLOC_C
     os_heap_init();
+#endif
 
     ZEPHYR_BOOT_LOG_START();
 
@@ -588,11 +589,13 @@ int main(void)
     BOOT_LOG_INF("Jumping to the image slot");
 #else
     BOOT_LOG_INF("Jumping to the first image slot");
+    BOOT_LOG_INF("......\n");
 #endif
 
     mcuboot_status_change(MCUBOOT_STATUS_BOOTABLE_IMAGE_FOUND);
 
     ZEPHYR_BOOT_LOG_STOP();
+
     do_boot(&rsp);
 
     mcuboot_status_change(MCUBOOT_STATUS_BOOT_FAILED);

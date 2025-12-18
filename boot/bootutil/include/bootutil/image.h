@@ -60,6 +60,9 @@ struct flash_area;
 #define IMAGE_F_ENCRYPTED_AES128         0x00000004 /* Encrypted using AES128. */
 #define IMAGE_F_ENCRYPTED_AES256         0x00000008 /* Encrypted using AES256. */
 #define IMAGE_F_NON_BOOTABLE             0x00000010 /* Split image app. */
+
+#define IMAGE_F_ENCRYPTED_QEEP           0x00000080 /* Encrypted using QEEP */
+
 /*
  * Indicates that this image should be loaded into RAM instead of run
  * directly from flash.  The address to load should be in the
@@ -139,6 +142,10 @@ struct flash_area;
 					    */
 #define IMAGE_TLV_ANY               0xffff /* Used to iterate over all TLV */
 
+#define IMAGE_TLV_MASQ_SIG              0xf0   /* masq signature */
+#define IMAGE_TLV_MASQ_CLIENT_CERT      0xf1   /* masq client certificate */
+#define IMAGE_TLV_ENC_MASQ              0xf2   /* encaped QEEP key with KEM */
+
 STRUCT_PACKED image_version {
     uint8_t iv_major;
     uint8_t iv_minor;
@@ -180,9 +187,11 @@ STRUCT_PACKED image_tlv {
     uint16_t it_len;    /* Data length (not including TLV header). */
 };
 
-#define ENCRYPTIONFLAGS (IMAGE_F_ENCRYPTED_AES128 | IMAGE_F_ENCRYPTED_AES256)
+#define ENCRYPTIONFLAGS (IMAGE_F_ENCRYPTED_AES128 | IMAGE_F_ENCRYPTED_AES256 | IMAGE_F_ENCRYPTED_QEEP)
 #define IS_ENCRYPTED(hdr) (((hdr)->ih_flags & IMAGE_F_ENCRYPTED_AES128) \
-                        || ((hdr)->ih_flags & IMAGE_F_ENCRYPTED_AES256))
+                        || ((hdr)->ih_flags & IMAGE_F_ENCRYPTED_AES256) \
+                        || ((hdr)->ih_flags & IMAGE_F_ENCRYPTED_QEEP) \
+                    )
 #define MUST_DECRYPT(fap, idx, hdr) \
     (flash_area_get_id(fap) == FLASH_AREA_IMAGE_SECONDARY(idx) && IS_ENCRYPTED(hdr))
 

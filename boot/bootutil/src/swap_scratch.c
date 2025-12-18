@@ -753,7 +753,7 @@ swap_run(struct boot_loader_state *state, struct boot_status *bs,
     int last_sector_idx;
     uint32_t swap_idx;
 
-    BOOT_LOG_INF("Starting swap using scratch algorithm.");
+    BOOT_LOG_INF("Starting swap primary image with secondary image (app size: 0x%x bytes).", copy_size);
 
     last_sector_idx = find_last_sector_idx(state, copy_size);
 

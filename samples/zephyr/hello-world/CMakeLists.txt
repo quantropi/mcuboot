@@ -24,3 +24,14 @@ endif()
 target_compile_definitions(app PRIVATE "-DMCUBOOT_HELLO_WORLD_FROM=\"${FROM_WHO}\"")
 
 target_sources(app PRIVATE src/main.c)
+
+target_include_directories(app PUBLIC 
+    ${MCUBOOT}/boot/bootutil/include
+    ${MCUBOOT}/boot/zephyr/include
+)
+
+target_link_libraries(app PUBLIC
+    ${MCUBOOTBUILD}/modules/mcuboot/libmcuboot_util.a
+    ${MCUBOOTBUILD}/zephyr/libzephyr.a
+    ${MCUBOOTBUILD}/zephyr/drivers/flash/libdrivers__flash.a
+)

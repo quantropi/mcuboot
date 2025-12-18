@@ -119,6 +119,17 @@ endif()
 # library which might be common source code for MCUBoot and an application
 zephyr_link_libraries(MCUBOOT_BOOTUTIL)
 
+if (${CONFIG_BOOT_SIGNATURE_TYPE_MASQ})
+  zephyr_library_include_directories(
+    ${NRF_DIR}
+    ${CONFIG_MBEDTLS_MASQ_SDK_DIR}/qeep/lib
+    )
+  zephyr_link_libraries(
+    -L${CONFIG_MBEDTLS_MASQ_SDK_DIR}/qeep/lib
+    qeep-${CONFIG_MBEDTLS_MASQLIB_SUFFIX}
+  )
+endif()
+
 if(CONFIG_BOOT_FIH_PROFILE_HIGH)
 zephyr_library_sources(
   ${BOOT_DIR}/bootutil/src/fault_injection_hardening_delay_rng_mbedtls.c
@@ -264,6 +275,18 @@ elseif(CONFIG_BOOT_SIGNATURE_TYPE_ED25519 OR CONFIG_BOOT_ENCRYPT_X25519)
   zephyr_library_sources(
     ${FIAT_DIR}/src/curve25519.c
   )
+elseif(CONFIG_BOOT_SIGNATURE_TYPE_MASQ)
+  # Use mbedTLS provided by Zephyr for MASQ signatures. (Its config file
+  # is set using Kconfig.)
+  zephyr_include_directories(include)
+  if(CONFIG_BOOT_ENCRYPT_MASQ)
+    set_source_files_properties(
+      ${BOOT_DIR}/bootutil/src/encrypted.c
+      PROPERTIES
+      INCLUDE_DIRECTORIES ${ZEPHYR_MBEDTLS_MODULE_DIR}/library
+      )
+  endif()
+  zephyr_library_sources(${BOOT_DIR}/zephyr/quantropi-pubkey.c)
 endif()
 
 if(CONFIG_BOOT_ENCRYPT_EC256 OR CONFIG_BOOT_ENCRYPT_X25519)
@@ -592,11 +615,13 @@ if(SYSBUILD)
       set(boot_tlv_estimate 150)
     elseif(CONFIG_BOOT_SIGNATURE_TYPE_ED25519)
       set(boot_tlv_estimate 144)
+    elseif(CONFIG_BOOT_SIGNATURE_TYPE_MASQ)
+      set(boot_tlv_estimate 464)  # TODO
     else()
       set(boot_tlv_estimate 40)
     endif()
 
-    if(CONFIG_BOOT_ENCRYPT_RSA OR CONFIG_BOOT_ENCRYPT_EC256 OR CONFIG_BOOT_ENCRYPT_X25519)
+    if(CONFIG_BOOT_ENCRYPT_RSA OR CONFIG_BOOT_ENCRYPT_EC256 OR CONFIG_BOOT_ENCRYPT_X25519 OR CONFIG_BOOT_ENCRYPT_MASQ)
       # 128-bit AES key size
       set(boot_enc_key_size 16)
 
@@ -607,6 +632,8 @@ if(SYSBUILD)
           math(EXPR key_size "65 + 32 + ${boot_enc_key_size}")
         elseif(CONFIG_BOOT_ENCRYPT_X25519)
           math(EXPR key_size "32 + 32 + ${boot_enc_key_size}")
+        elseif(CONFIG_BOOT_ENCRYPT_MASQ)
+          math(EXPR key_size "1 + 16 + 1 + 32 + 4")   # qeep key length: tag+iv+version+key+mac
         endif()
       else()
         set(key_size "${boot_enc_key_size}")

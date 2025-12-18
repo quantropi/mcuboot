@@ -23,6 +23,8 @@
 
 #if defined(CONFIG_BOOT_SIGNATURE_TYPE_RSA) || defined(CONFIG_BOOT_ENCRYPT_RSA)
 #include "config-rsa.h"
+#elif defined(CONFIG_BOOT_SIGNATURE_TYPE_MASQ)
+#include "config-masq.h"
 #elif defined(CONFIG_BOOT_SIGNATURE_TYPE_ECDSA_P256) || \
       defined(CONFIG_BOOT_ENCRYPT_EC256) || \
       (defined(CONFIG_BOOT_ENCRYPT_X25519) && !defined(CONFIG_BOOT_SIGNATURE_TYPE_ED25519))

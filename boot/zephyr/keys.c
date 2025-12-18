@@ -29,7 +29,7 @@
 #include <mcuboot_config/mcuboot_config.h>
 
 #if !defined(MCUBOOT_HW_KEY)
-#if defined(MCUBOOT_SIGN_RSA) || defined(MCUBOOT_SIGN_EC256) || defined(MCUBOOT_SIGN_ED25519)
+#if defined(MCUBOOT_SIGN_RSA) || defined(MCUBOOT_SIGN_EC256) || defined(MCUBOOT_SIGN_ED25519) || defined(MCUBOOT_SIGN_MASQ)
 #define HAVE_KEYS
 #if defined(MCUBOOT_SIGN_RSA)
 extern const unsigned char rsa_pub_key[];
@@ -40,6 +40,11 @@ extern unsigned int ecdsa_pub_key_len;
 #elif defined(MCUBOOT_SIGN_ED25519)
 extern const unsigned char ed25519_pub_key[];
 extern unsigned int ed25519_pub_key_len;
+#elif defined(MCUBOOT_SIGN_MASQ)
+extern const unsigned char quantropi_pub_key[];
+extern unsigned int quantropi_pub_key_len;
+extern const unsigned char quantropi_crt_der;
+extern unsigned int quantropi_crt_der_len;
 #endif
 #endif
 
@@ -60,6 +65,9 @@ const struct bootutil_key bootutil_keys[] = {
 #elif defined(MCUBOOT_SIGN_ED25519)
         .key = ed25519_pub_key,
         .len = &ed25519_pub_key_len,
+#elif defined(MCUBOOT_SIGN_MASQ)
+        .key = quantropi_pub_key,
+        .len = &quantropi_pub_key_len,
 #endif
     },
 };
@@ -85,4 +93,12 @@ const struct bootutil_key bootutil_enc_key = {
 };
 #elif defined(MCUBOOT_ENCRYPT_KW)
 #error "Encrypted images with AES-KW is not implemented yet."
+#elif defined(MCUBOOT_ENCRYPT_MASQ)
+const unsigned char enc_priv_key[] = {
+    0x8C,0x72,0x29,0xDE,0x19,0x79,0xA7,0xC5,0x11,0xE2,0x0D,0x21,0x54,0xD3,0x03,0x87,0x02,0x50,0x4F,0x3B,0x70,0xB1,0x80,0x7A,0x9D,0x72,0xF6,0x5D,0xB4,0x4B,0x57,0x17,0x9A,0xD0,0x51,0x06,0x6E,0x12,0x1B,0x6A,0xAF,0xA7,0x81,0x5F,0x56,0xBE,0xB6,0xF1,0x5E,0xCD,0x60,0x72,0x98,0x0C,0xB4,0xFE,0x95,0x0C,0x0F,0x9C,0xBD,0x16,0x6A,0x8D,0xBB,0x00,0xC9,0xA2,0x88,0x1D,0x52,0x73,0x0B,0xD2,0xAA,0x9B,0x92,0xFE,0x3A,0xDD,0x14,0xA5,0x00};
+unsigned int enc_priv_key_len = 83;
+const struct bootutil_key bootutil_enc_key = {
+    .key = enc_priv_key,
+    .len = &enc_priv_key_len,
+};
 #endif

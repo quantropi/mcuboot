@@ -7,9 +7,18 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 
+#include "bootutil/bootutil_public.h"
+
 int main(void)
 {
 	printk("Hello World from %s on %s!\n",
 	       MCUBOOT_HELLO_WORLD_FROM, CONFIG_BOARD);
+	printk("Hello World from %s on %s!\n",
+	       MCUBOOT_HELLO_WORLD_FROM, CONFIG_BOARD);
+	printk("Hello World from %s on %s!\n",
+	       MCUBOOT_HELLO_WORLD_FROM, CONFIG_BOARD);
+
+	boot_set_confirmed();
+
 	return 0;
 }

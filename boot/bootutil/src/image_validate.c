@@ -32,10 +32,11 @@
 #include <inttypes.h>
 #include <string.h>
 #include <errno.h>
+#ifdef DEMO
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/types.h>
-
+#endif
 #include <flash_map_backend/flash_map_backend.h>
 #include "bootutil/bootutil.h"
 #include "bootutil/bootutil_log.h"
@@ -571,8 +572,10 @@ bootutil_img_validate(struct boot_loader_state *state,
      */
     int key_id = image_index;
 #endif /* !MCUBOOT_BUILTIN_KEY */
+#if !defined(MCUBOOT_SIGN_MASQ)
 #ifdef MCUBOOT_HW_KEY
     uint8_t key_buf[KEY_BUF_SIZE];
+#endif
 #endif
 #endif /* EXPECTED_SIG_TLV */
     struct image_tlv_iter it;
@@ -792,6 +795,7 @@ bootutil_img_validate(struct boot_loader_state *state,
                         keytype[itype], pksize[itype-8], sksize[itype-8], sigsize[itype-8]);
             }
 
+#ifdef DEMO
             int64_t start_time = k_uptime_get();
             int64_t elapsed_time;
             if (mbedtls_pk_verify(&client_cert.pk, MBEDTLS_MD_NONE, hash, SHA512_DIGEST_LENGTH, sigbuf, siglen) == 0) {
@@ -809,6 +813,21 @@ bootutil_img_validate(struct boot_loader_state *state,
                     FIH_SET(valid_signature, FIH_FAILURE);
                 }
             }
+#else
+            if (mbedtls_pk_verify(&client_cert.pk, MBEDTLS_MD_NONE, hash, SHA512_DIGEST_LENGTH, sigbuf, siglen) == 0) {
+                FIH_SET(valid_signature, FIH_SUCCESS);
+                BOOT_LOG_INF("Image VERIFIED !");
+            } else {
+                if ( (len == siglen * 2 + sizeof(uint32_t)) &&
+                    (mbedtls_pk_verify(&client_cert.pk, MBEDTLS_MD_NONE, hash, SHA512_DIGEST_LENGTH, sigbuf+siglen, siglen) == 0) ) {
+                        FIH_SET(valid_signature, FIH_SUCCESS);
+                        BOOT_LOG_INF("Image VERIFIED !");
+                } else {
+                    BOOT_LOG_INF("INVALID Image!");
+                    FIH_SET(valid_signature, FIH_FAILURE);
+                }
+            }
+#endif
             mbedtls_x509_crt_free(&client_cert);
 #endif
 #endif

@@ -196,6 +196,10 @@ boot_save_boot_status(uint8_t sw_module,
         }
     }
 
+#if defined(MCUBOOT_SIGN_MASQ)
+    record_len = 92;
+    memset(buf,0x55,record_len);
+#else
     if (!boot_record_found || !hash_found) {
         return -1;
     }
@@ -220,6 +224,7 @@ boot_save_boot_status(uint8_t sw_module,
      * the BOOT_RECORD TLV was read, it won't overflow.
      */
     memcpy(buf + offset, image_hash, sizeof(image_hash));
+#endif
 
     /* Add the CBOR encoded boot record to the shared data area. */
     ias_minor = SET_IAS_MINOR(sw_module, SW_BOOT_RECORD);

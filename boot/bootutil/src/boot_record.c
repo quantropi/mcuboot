@@ -197,8 +197,9 @@ boot_save_boot_status(uint8_t sw_module,
     }
 
 #if defined(MCUBOOT_SIGN_MASQ)
-    record_len = 92;
-    memset(buf,0x55,record_len);
+    if (!boot_record_found) {
+        return -1;
+    }
 #else
     if (!boot_record_found || !hash_found) {
         return -1;

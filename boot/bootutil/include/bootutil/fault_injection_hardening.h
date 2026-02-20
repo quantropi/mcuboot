@@ -351,7 +351,7 @@ void fih_cfi_decrement(void);
  * called.
  */
 #define FIH_CFI_PRECALL_BLOCK \
-    fih_int _fih_cfi_saved_value = fih_cfi_get_and_increment()
+    volatile fih_int _fih_cfi_saved_value = fih_cfi_get_and_increment()
 
 #define FIH_CFI_POSTCALL_BLOCK \
         fih_cfi_validate(_fih_cfi_saved_value)

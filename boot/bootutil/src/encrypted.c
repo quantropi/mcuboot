@@ -420,6 +420,7 @@ static int fake_rng(void *p_rng, unsigned char *output, size_t len)
 #endif /* (MCUBOOT_ENCRYPT_RSA && MCUBOOT_USE_MBED_TLS && !MCUBOOT_USE_PSA_CRYPTO) ||
           (MCUBOOT_ENCRYPT_EC256 && MCUBOOT_USE_MBED_TLS) */
 
+
 /*
  * Decrypt an encryption key TLV.
  *
@@ -480,13 +481,17 @@ boot_decrypt_key(const uint8_t *buf, uint8_t *enckey)
     }
     MASQ_KEM_free(kem_handle);
 
+#if !defined(MCUBOOT_ENCRYPT_MASQ_AES)
     QSC_qeep_key_create(kem_handle, key, SHARED_KEY_LEN, 0, SHARED_KEY_LEN, enckey, &qklen);  //kem_handle is not used in this api
     if (qklen != QK_LEN) {
         return -1;
     }
 
     memcpy(iv_qeep, &buf[TLV_ENC_MASQ_SZ-16], 16);
+#else
+    memcpy(enckey, key, SHARED_KEY_LEN);
 
+#endif
 #endif
 
 #if defined(MCUBOOT_ENCRYPT_RSA)
@@ -737,7 +742,7 @@ boot_enc_set_key(struct enc_key_data *enc_state, uint8_t slot,
 {
     int rc;
 
-#if !defined(MCUBOOT_ENCRYPT_MASQ)
+#if !defined(MCUBOOT_ENCRYPT_MASQ) || defined(MCUBOOT_ENCRYPT_MASQ_AES)
     rc = bootutil_aes_ctr_set_key(&enc_state[slot].aes_ctr, bs->enckey[slot]);
     if (rc != 0) {
         boot_enc_drop(enc_state, slot);
@@ -789,7 +794,7 @@ boot_enc_encrypt(struct enc_key_data *enc_state, int slot, uint32_t off,
     if (sz == 0) {
        return;
     }
-#if !defined(MCUBOOT_ENCRYPT_MASQ)
+#if !defined(MCUBOOT_ENCRYPT_MASQ) || defined(MCUBOOT_ENCRYPT_MASQ_AES)
     uint8_t nonce[16];
     memset(nonce, 0, 12);
     off >>= 4;
@@ -819,7 +824,7 @@ boot_enc_decrypt(struct enc_key_data *enc_state, int slot, uint32_t off,
        return;
     }
 
-#if !defined(MCUBOOT_ENCRYPT_MASQ)
+#if !defined(MCUBOOT_ENCRYPT_MASQ) || defined(MCUBOOT_ENCRYPT_MASQ_AES)
     uint8_t nonce[16];
     memset(nonce, 0, 12);
     off >>= 4;

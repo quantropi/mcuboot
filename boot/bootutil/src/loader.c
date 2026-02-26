@@ -1792,7 +1792,7 @@ boot_swap_image(struct boot_loader_state *state, struct boot_status *bs)
             rc = boot_enc_load(state, 1, hdr, fap, bs);
 #endif
             assert(rc >= 0);
-            #if !defined(MCUBOOT_ENCRYPT_MASQ) // For masq, already got the qeep key in bs->enckey[1]
+            #if !defined(MCUBOOT_ENCRYPT_MASQ) || defined(MCUBOOT_ENCRYPT_MASQ_AES)// For masq qeep, already got the qeep key in bs->enckey[1]
             if (rc == 0) {
                 rc = boot_enc_set_key(BOOT_CURR_ENC(state), 1, bs);
                 assert(rc == 0);

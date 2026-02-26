@@ -36,7 +36,7 @@ extern "C" {
 #define ALIGN_UP(num, align)    (((num) + ((align) - 1)) & ~((align) - 1))
 #endif
 
-#ifdef MCUBOOT_AES_256
+#if defined(MCUBOOT_AES_256) || defined(MCUBOOT_ENCRYPT_MASQ_AES)
 #define BOOT_ENC_KEY_SIZE       32
 #else
 #define BOOT_ENC_KEY_SIZE       16

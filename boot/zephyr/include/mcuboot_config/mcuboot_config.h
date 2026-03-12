@@ -12,6 +12,12 @@
 
 #include <zephyr/devicetree.h>
 
+// mcuboot memory map: data, stack, heap. The shared memory will be at the high end of the heap
+#define RAM_BASE DT_REG_ADDR(DT_NODELABEL(sram0))
+#define RAM_SIZE DT_REG_SIZE(DT_NODELABEL(sram0))
+#define MCUBOOT_SHARED_DATA_SIZE     0x100
+#define MCUBOOT_SHARED_DATA_BASE     (RAM_BASE + RAM_SIZE - MCUBOOT_SHARED_DATA_SIZE)
+
 #define CONFIG_BOOT_ENCRYPT_MASQ
 #define MCUBOOT_AES_256
 

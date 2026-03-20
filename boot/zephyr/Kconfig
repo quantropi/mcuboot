@@ -711,7 +711,7 @@ config BOOT_SHARE_DATA_BOOTINFO
 
 menuconfig MEASURED_BOOT
 	bool "Store the boot state/measurements in shared memory area"
-	depends on BOOT_SHARE_BACKEND_AVAILABLE
+#	depends on BOOT_SHARE_BACKEND_AVAILABLE
 	help
 	  If enabled, the bootloader will store certain boot measurements such as
 	  the hash of the firmware image in a shared memory area. This data can

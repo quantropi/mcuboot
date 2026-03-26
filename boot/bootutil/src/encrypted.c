@@ -753,8 +753,11 @@ boot_enc_set_key(struct enc_key_data *enc_state, uint8_t slot,
        if (rc != QEEP_OK) {
                return -1;
        }
-
-       rc = QP_qeep_key_load((QP_Handle)(enc_state[slot].qp_handle), (uint8_t *)(bs->enckey[slot]), QK_LEN);
+       if (slot==0) { // main slot, to encrypt
+           rc = QP_qeep_key_load_en((QP_Handle)(enc_state[slot].qp_handle), (uint8_t *)(bs->enckey[slot]), QK_LEN);
+       } else {
+           rc = QP_qeep_key_load_de((QP_Handle)(enc_state[slot].qp_handle), (uint8_t *)(bs->enckey[slot]), QK_LEN);
+       }
        if (rc != QEEP_OK) {
         QP_close((QP_Handle)(enc_state[slot].qp_handle));
                return -1;
@@ -769,6 +772,12 @@ boot_enc_set_key(struct enc_key_data *enc_state, uint8_t slot,
     enc_state[slot].valid = 1;
 
     return 0;
+}
+
+int
+boot_enc_qeep_close(struct enc_key_data *enc_state, uint8_t slot)
+{
+    QP_close((QP_Handle)(enc_state[slot].qp_handle));
 }
 
 bool
@@ -818,12 +827,10 @@ boot_enc_decrypt(struct enc_key_data *enc_state, int slot, uint32_t off,
              uint32_t sz, uint32_t blk_off, uint8_t *buf)
 {
     struct enc_key_data *enc = &enc_state[slot];
-
     /* Nothing to do with size == 0 */
     if (sz == 0) {
        return;
     }
-
 #if !defined(MCUBOOT_ENCRYPT_MASQ) || defined(MCUBOOT_ENCRYPT_MASQ_AES)
     uint8_t nonce[16];
     memset(nonce, 0, 12);

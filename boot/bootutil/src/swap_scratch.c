@@ -452,6 +452,30 @@ boot_copy_sz(const struct boot_loader_state *state, int last_sector_idx,
     *out_first_sector_idx = i + 1;
     return sz;
 }
+static uint32_t
+boot_copy_sz_qeep(const struct boot_loader_state *state, int first_sector_idx, int last_sector_idx,
+             int *next_first_sector_idx)
+{
+    size_t scratch_sz;
+    uint32_t new_sz;
+    uint32_t sz;
+    int i;
+
+    sz = 0;
+
+    scratch_sz = boot_scratch_area_size(state);
+    for (i = first_sector_idx; i <= last_sector_idx; i++) {
+        new_sz = sz + boot_img_sector_size(state, BOOT_PRIMARY_SLOT, i);
+
+        if (new_sz > scratch_sz) {
+            break;
+        }
+        sz = new_sz;
+    }
+
+    *next_first_sector_idx = i;
+    return sz;
+}
 
 /**
  * Finds the index of the last sector in the primary slot that needs swapping.
@@ -789,6 +813,7 @@ boot_swap_sectors(int idx, uint32_t sz, struct boot_loader_state *state,
     }
 }
 
+#if !defined(MCUBOOT_ENCRYPT_MASQ) || defined(MCUBOOT_ENCRYPT_MASQ_AES)
 void
 swap_run(struct boot_loader_state *state, struct boot_status *bs,
          uint32_t copy_size)
@@ -814,6 +839,34 @@ swap_run(struct boot_loader_state *state, struct boot_status *bs,
     }
 
 }
+#else
+void
+swap_run(struct boot_loader_state *state, struct boot_status *bs,
+         uint32_t copy_size)
+{
+    uint32_t sz;
+    int first_sector_idx;
+    int next_first_sector_idx;
+    int last_sector_idx;
+    uint32_t swap_idx;
+
+    BOOT_LOG_INF("Starting swap primary image with secondary image (app size: 0x%x bytes).", copy_size);
+
+    first_sector_idx = 0;
+    last_sector_idx = find_last_sector_idx(state, copy_size);
+
+    swap_idx = 0;
+    while (first_sector_idx < last_sector_idx) {
+        sz = boot_copy_sz_qeep(state, first_sector_idx, last_sector_idx, &next_first_sector_idx);
+        if (swap_idx >= (bs->idx - BOOT_STATUS_IDX_0)) {
+            boot_swap_sectors(first_sector_idx, sz, state, bs);
+        }
+
+        first_sector_idx = next_first_sector_idx;
+        swap_idx++;
+    }
+}
+#endif
 #endif /* !MCUBOOT_OVERWRITE_ONLY */
 
 int app_max_size(struct boot_loader_state *state)

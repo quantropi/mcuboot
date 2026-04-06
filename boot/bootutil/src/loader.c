@@ -792,9 +792,6 @@ boot_image_check(struct boot_loader_state *state, struct image_header *hdr,
         if (rc < 0) {
             FIH_RET(fih_rc);
         }
-        if (rc == 0 && boot_enc_set_key(BOOT_CURR_ENC(state), 1, bs)) {
-            FIH_RET(fih_rc);
-        }
     }
 #endif
 
@@ -805,7 +802,6 @@ boot_image_check(struct boot_loader_state *state, struct image_header *hdr,
     FIH_CALL(bootutil_img_validate, fih_rc, state, hdr, fap, tmpbuf, BOOT_TMPBUF_SZ,
              NULL, 0, NULL);
 #endif
-
     FIH_RET(fih_rc);
 }
 
@@ -1533,10 +1529,9 @@ boot_copy_region(struct boot_loader_state *state,
 
         bytes_copied += chunk_sz;
 
-        if ((bytes_copied/chunk_sz % 20) == 0) printf(".");
+        if ((bytes_copied/chunk_sz % 20) == 0) {printf("."); fflush(0);}
         MCUBOOT_WATCHDOG_FEED();
     }
-    printf("\n");
 
     return 0;
 }
@@ -1567,6 +1562,7 @@ boot_copy_image(struct boot_loader_state *state, struct boot_status *bs)
     const struct flash_area *fap_primary_slot;
     const struct flash_area *fap_secondary_slot;
     uint8_t image_index;
+    int qeep_inited=0;
 
 #if defined(MCUBOOT_OVERWRITE_ONLY_FAST)
     uint32_t sector;
@@ -1643,6 +1639,7 @@ boot_copy_image(struct boot_loader_state *state, struct boot_status *bs)
         if (rc == 0 && boot_enc_set_key(BOOT_CURR_ENC(state), 1, bs)) {
             return BOOT_EBADIMAGE;
         }
+        qeep_inited = 1;
     }
 #endif
 
@@ -1657,14 +1654,18 @@ boot_copy_image(struct boot_loader_state *state, struct boot_status *bs)
     if (rc != 0) {
         return rc;
     }
-
 #if defined(MCUBOOT_OVERWRITE_ONLY_FAST)
     rc = boot_write_magic(fap_primary_slot);
     if (rc != 0) {
         return rc;
     }
 #endif
-
+    printf("\r\n");
+#if defined(MCUBOOT_ENC_IMAGES) && defined(MCUBOOT_ENCRYPT_MASQ) && !defined(MCUBOOT_ENCRYPT_MASQ_AES)
+    if (qeep_inited == 1) {
+        boot_enc_qeep_close(BOOT_CURR_ENC(state), 1);
+    }
+#endif
     rc = BOOT_HOOK_CALL(boot_copy_region_post_hook, 0, BOOT_CURR_IMG(state),
                         BOOT_IMG_AREA(state, BOOT_PRIMARY_SLOT), size);
     if (rc != 0) {
@@ -1792,14 +1793,12 @@ boot_swap_image(struct boot_loader_state *state, struct boot_status *bs)
             rc = boot_enc_load(state, 1, hdr, fap, bs);
 #endif
             assert(rc >= 0);
-            #if !defined(MCUBOOT_ENCRYPT_MASQ) || defined(MCUBOOT_ENCRYPT_MASQ_AES)// For masq qeep, already got the qeep key in bs->enckey[1]
             if (rc == 0) {
                 rc = boot_enc_set_key(BOOT_CURR_ENC(state), 1, bs);
                 assert(rc == 0);
             } else {
                 rc = 0;
             }
-            #endif
         } else {
             memset(bs->enckey[1], 0xff, BOOT_ENC_KEY_ALIGN_SIZE);
         }
@@ -1845,6 +1844,12 @@ boot_swap_image(struct boot_loader_state *state, struct boot_status *bs)
     }
 
     swap_run(state, bs, copy_size);
+    printf("\r\n");
+#if defined(MCUBOOT_ENC_IMAGES) && defined(MCUBOOT_ENCRYPT_MASQ) && !defined(MCUBOOT_ENCRYPT_MASQ_AES)
+    for (slot = 0; slot < BOOT_NUM_SLOTS; slot++) {
+        boot_enc_qeep_close(BOOT_CURR_ENC(state), slot);
+    }
+#endif
 
 #ifdef MCUBOOT_VALIDATE_PRIMARY_SLOT
     extern int boot_status_fails;

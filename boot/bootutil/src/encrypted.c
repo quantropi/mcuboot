@@ -45,7 +45,6 @@ static int32_t rand_cf(struct MASQ_RAND_HANDLE_ *rand_handle, int32_t rand_lengt
 static int32_t rand_seed_cf(struct MASQ_RAND_HANDLE_ *rand_handle, uint8_t *seed, int32_t seed_length) {
     return 0;
 }
-uint8_t iv_qeep[IV_SIZE];
 #endif
 
 #if !defined(MCUBOOT_USE_PSA_CRYPTO)
@@ -486,12 +485,10 @@ boot_decrypt_key(const uint8_t *buf, uint8_t *enckey)
     if (qklen != QK_LEN) {
         return -1;
     }
-
-    memcpy(iv_qeep, &buf[TLV_ENC_MASQ_SZ-16], 16);
 #else
     memcpy(enckey, key, SHARED_KEY_LEN);
-
 #endif
+
 #endif
 
 #if defined(MCUBOOT_ENCRYPT_RSA)

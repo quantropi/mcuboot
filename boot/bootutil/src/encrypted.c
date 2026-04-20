@@ -486,12 +486,11 @@ boot_decrypt_key(const uint8_t *buf, uint8_t *enckey)
     if (qklen != QK_LEN) {
         return -1;
     }
-
     memcpy(iv_qeep, &buf[TLV_ENC_MASQ_SZ-16], 16);
 #else
     memcpy(enckey, key, SHARED_KEY_LEN);
-
 #endif
+
 #endif
 
 #if defined(MCUBOOT_ENCRYPT_RSA)
@@ -750,24 +749,20 @@ boot_enc_set_key(struct enc_key_data *enc_state, uint8_t slot,
     }
 #else
     rc = QP_init((QP_Handle *)&(enc_state[slot].qp_handle));
-       if (rc != QEEP_OK) {
-               return -1;
-       }
-       if (slot==0) { // main slot, to encrypt
-           rc = QP_qeep_key_load_en((QP_Handle)(enc_state[slot].qp_handle), (uint8_t *)(bs->enckey[slot]), QK_LEN);
-       } else {
-           rc = QP_qeep_key_load_de((QP_Handle)(enc_state[slot].qp_handle), (uint8_t *)(bs->enckey[slot]), QK_LEN);
-       }
-       if (rc != QEEP_OK) {
-        QP_close((QP_Handle)(enc_state[slot].qp_handle));
-               return -1;
-       }
+    if (rc != QEEP_OK) {
+        return -1;
+    }
 
-       rc = QP_iv_set((QP_Handle)(enc_state[slot].qp_handle), iv_qeep, IV_SIZE);
-       if (rc != QEEP_OK) {
+    rc = QP_qeep_key_load_en((QP_Handle)(enc_state[slot].qp_handle), (uint8_t *)(bs->enckey[slot]), QK_LEN);
+    if (rc != QEEP_OK) {
         QP_close((QP_Handle)(enc_state[slot].qp_handle));
-               return -1;
-       }
+        return -1;
+    }
+
+    rc = QP_iv_set((QP_Handle)(enc_state[slot].qp_handle), iv_qeep, IV_SIZE);
+    if (rc != QEEP_OK) {
+        return -1;
+    }
 #endif
     enc_state[slot].valid = 1;
 
@@ -803,7 +798,7 @@ boot_enc_encrypt(struct enc_key_data *enc_state, int slot, uint32_t off,
     if (sz == 0) {
        return;
     }
-#if !defined(MCUBOOT_ENCRYPT_MASQ) || defined(MCUBOOT_ENCRYPT_MASQ_AES)
+
     uint8_t nonce[16];
     memset(nonce, 0, 12);
     off >>= 4;
@@ -813,12 +808,12 @@ boot_enc_encrypt(struct enc_key_data *enc_state, int slot, uint32_t off,
     nonce[15] = (uint8_t)off;
 
     assert(enc->valid == 1);
+#if !defined(MCUBOOT_ENCRYPT_MASQ) || defined(MCUBOOT_ENCRYPT_MASQ_AES)
     bootutil_aes_ctr_encrypt(&enc->aes_ctr, nonce, buf, sz, blk_off, buf);
 #else
     uint8_t tmp[BUF_SZ];
     memcpy(tmp, buf, sz);
-    assert(enc->valid == 1);
-    QP_encrypt((QP_Handle)(enc->qp_handle), tmp, sz, buf);
+    QP_ctr_encrypt((QP_Handle)(enc->qp_handle), nonce, tmp, sz, buf);
 #endif
 }
 
@@ -831,7 +826,7 @@ boot_enc_decrypt(struct enc_key_data *enc_state, int slot, uint32_t off,
     if (sz == 0) {
        return;
     }
-#if !defined(MCUBOOT_ENCRYPT_MASQ) || defined(MCUBOOT_ENCRYPT_MASQ_AES)
+
     uint8_t nonce[16];
     memset(nonce, 0, 12);
     off >>= 4;
@@ -841,12 +836,13 @@ boot_enc_decrypt(struct enc_key_data *enc_state, int slot, uint32_t off,
     nonce[15] = (uint8_t)off;
 
     assert(enc->valid == 1);
+#if !defined(MCUBOOT_ENCRYPT_MASQ) || defined(MCUBOOT_ENCRYPT_MASQ_AES)
     bootutil_aes_ctr_decrypt(&enc->aes_ctr, nonce, buf, sz, blk_off, buf);
 #else
     uint8_t tmp[BUF_SZ];
     memcpy(tmp, buf, sz);
-    assert(enc->valid == 1);
-    QP_decrypt((QP_Handle)(enc->qp_handle), tmp, sz, buf);
+
+    QP_ctr_decrypt((QP_Handle)(enc->qp_handle), nonce, tmp, sz, buf);
 #endif
 }
 

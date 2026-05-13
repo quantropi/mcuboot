@@ -1529,7 +1529,7 @@ boot_copy_region(struct boot_loader_state *state,
 
         bytes_copied += chunk_sz;
 
-        if ((bytes_copied/chunk_sz % 20) == 0) {printf("."); fflush(0);}
+        if ((bytes_copied/chunk_sz % 20) == 0) {printf(".");}
         MCUBOOT_WATCHDOG_FEED();
     }
 

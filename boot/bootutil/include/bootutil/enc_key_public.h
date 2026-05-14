@@ -48,7 +48,7 @@ extern "C" {
 #define TLV_ENC_KW_SZ     (BOOT_ENC_KEY_SIZE + 8)
 #define TLV_ENC_EC256_SZ  (65 + 32 + BOOT_ENC_KEY_SIZE)
 #define TLV_ENC_X25519_SZ (32 + 32 + BOOT_ENC_KEY_SIZE)
-#define TLV_ENC_MASQ_SZ   208 + 16
+#define TLV_ENC_MASQ_SZ   96 + 16
 
 #if defined(MCUBOOT_ENCRYPT_RSA)
 #define BOOT_ENC_TLV_SIZE TLV_ENC_RSA_SZ

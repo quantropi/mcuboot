@@ -36,6 +36,15 @@
 #define MBEDTLS_MASQ_ML_C
 #endif
 
+#if defined(CONFIG_MCUBOOT_ENCRYPT_QEEP)
+#define MCUBOOT_ENCRYPT_MASQ
+#endif
+
+#if defined(CONFIG_MCUBOOT_ENCRYPT_AES)
+#define MCUBOOT_ENCRYPT_MASQ
+#define MCUBOOT_ENCRYPT_MASQ_AES
+#endif
+
 /* System support */
 #define MBEDTLS_PLATFORM_C
 #define MBEDTLS_NO_PLATFORM_ENTROPY

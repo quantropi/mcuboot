@@ -457,7 +457,6 @@ boot_decrypt_key(const uint8_t *buf, uint8_t *enckey)
 #if defined(MCUBOOT_ENCRYPT_MASQ)
     MASQ_KEM_handle *kem_handle;
 	uint8_t key[SHARED_KEY_LEN];
-	int32_t qklen;
 #endif
     struct bootutil_key *bootutil_enc_key = NULL;
     int rc = -1;
@@ -482,6 +481,7 @@ boot_decrypt_key(const uint8_t *buf, uint8_t *enckey)
     MASQ_KEM_free(kem_handle);
 
 #if !defined(MCUBOOT_ENCRYPT_MASQ_AES)
+	int32_t qklen;
     QSC_qeep_key_create(kem_handle, key, SHARED_KEY_LEN, 0, SHARED_KEY_LEN, enckey, &qklen);  //kem_handle is not used in this api
     if (qklen != QK_LEN) {
         return -1;

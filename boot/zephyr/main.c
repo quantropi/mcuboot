@@ -582,6 +582,7 @@ int main(void)
                                                     rsp.br_hdr->ih_ver.iv_minor,
                                                     rsp.br_hdr->ih_ver.iv_revision);
 
+    BOOT_LOG_INF("Time elapsed before jump to the image: %d ms", k_uptime_get_32());
 #if defined(MCUBOOT_DIRECT_XIP)
     BOOT_LOG_INF("Jumping to the image slot");
 #else

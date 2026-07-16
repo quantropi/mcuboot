@@ -58,7 +58,7 @@ jobs:
           echo "MCUBOOT_VERSION=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
 
       - name: Checkout Zephyr
-        uses: actions/checkout@v2
+        uses: actions/checkout@v7
         with:
           repository: 'zephyrproject-rtos/zephyr'
           ref: ${{ env.ZEPHYR_VERSION }}
@@ -79,7 +79,7 @@ jobs:
           ccache-max-size: 768MB
 
       - name: Checkout MCUBoot
-        uses: actions/checkout@v2
+        uses: actions/checkout@v7
         with:
           repository: 'mcu-tools/mcuboot'
           ref: ${{ env.MCUBOOT_VERSION }}
@@ -101,7 +101,7 @@ jobs:
           ./scripts/twister --inline-logs -v -N -M --integration --overflow-as-errors ${test_paths}
 
       - name: Upload Tests Results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: Tests Results
